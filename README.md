@@ -8,4 +8,4 @@ Added a data class to have more options how it should look. You can find the opt
 
 Little bug on "menuData->setHideMenu(true);". If false it doesnt work like expected.
 
-![Example image](https://github.com/chrisaverage/burger-menu/blob/master/example/images/preview.jpg)
+![Example image](https://github.com/lancedelgardo/burger-menu/blob/master/example/images/newPreview.jpg)
