@@ -1,4 +1,5 @@
 #include "burgermenu.h"
+
 #include <QStackedWidget>
 #include <QVBoxLayout>
 #include <QHBoxLayout>
@@ -8,73 +9,25 @@
 #include <QStyleOption>
 #include <QPainter>
 #include <QPropertyAnimation>
+#include <QDebug>
+
+// TODO TextFarbe Menu ändern
 
 static const QString BurgerButtonObjectName("BurgerButton");
 static const QString BurgerMenuName("BurgerMenu");
 static const QString MainBurgerButtonObjectName("MainBurgerButton");
 
-class BurgerButton : public QPushButton
+BurgerMenu::BurgerMenu(BurgerMenuData *mData, QWidget *parent) : QWidget(parent), mActions(new QActionGroup(this)), mBurgerButton(new QPushButton(this)), mMenuWidth(200)
 {
-  public:
-    BurgerButton(QAction *action, QWidget *parent) : QPushButton(parent), mAction(action), mIconSize(QSize(64, 64))
-    {
-        setObjectName(BurgerButtonObjectName);
-        connect(action, &QAction::destroyed, this, &BurgerButton::deleteLater);
-        setCursor(Qt::PointingHandCursor);
-
-        connect(mAction, SIGNAL(changed()), this, SLOT(update()));
-        connect(this, &BurgerButton::clicked, [&] {
-            if (mAction->isCheckable() && !mAction->isChecked()) mAction->toggle();
-
-            mAction->trigger();
-        });
-    }
-
-    void paintEvent(QPaintEvent *) override
-    {
-        QPainter painter(this);
-        QStyleOptionButton opt;
-        opt.initFrom(this);
-        opt.state |= (mAction->isChecked() ? QStyle::State_On : QStyle::State_Off);
-
-        style()->drawPrimitive(QStyle::PE_Widget, &opt, &painter, this);
-        if (!mAction->icon().isNull())
-        {
-            QIcon::Mode mode = ((opt.state & QStyle::State_MouseOver) == 0) ? QIcon::Normal : QIcon::Active;
-            if (!isEnabled()) mode = QIcon::Disabled;
-            QIcon::State state = mAction->isChecked() ? QIcon::On : QIcon::Off;
-            painter.drawPixmap(QRect(QPoint(0, 0), mIconSize), mAction->icon().pixmap(mIconSize, mode, state));
-        }
-
-        opt.rect = rect().adjusted(mIconSize.width(), 0, 0, 0);
-        opt.text = fontMetrics().elidedText(mAction->iconText(), Qt::ElideRight, opt.rect.width(), Qt::TextShowMnemonic);
-        style()->drawControl(QStyle::CE_CheckBoxLabel, &opt, &painter, this);
-    }
-
-    void setIconSize(const QSize &size)
-    {
-        mIconSize = size;
-        setFixedHeight(mIconSize.height());
-        update();
-    }
-
-    QAction *action() const { return mAction; }
-
-  private:
-    QSize mIconSize;
-    QAction *mAction = Q_NULLPTR;
-};
-
-
-BurgerMenu::BurgerMenu(bool hideMenu, QWidget *parent) : QWidget(parent), mActions(new QActionGroup(this)), mBurgerButton(new QPushButton(this)), mMenuWidth(200), mAnimated(true)
-{
+    this->menuData = mData;
     setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
     mBurgerButton->setObjectName(MainBurgerButtonObjectName);
     mBurgerButton->setFlat(true);
-    mBurgerButton->setIconSize(QSize(48, 48));
+    mBurgerButton->setIconSize(QSize(64, 64));
     mBurgerButton->setFixedSize(48, 48);
-    mBurgerButton->setCheckable(true);
-    mBurgerButton->setCursor(Qt::PointingHandCursor);
+
+    //    mBurgerButton->setCheckable(true);
+    //    mBurgerButton->setCursor(Qt::PointingHandCursor);
     mActions->setExclusive(true);
 
     auto burgerWidget = new QWidget(this);
@@ -88,16 +41,15 @@ BurgerMenu::BurgerMenu(bool hideMenu, QWidget *parent) : QWidget(parent), mActio
     auto lay = new QVBoxLayout();
     setLayout(lay);
     lay->setContentsMargins(0, 0, 0, 0);
-    lay->setSpacing(0);
+    lay->setSpacing(50);
 
     lay->addLayout(burgerLay);
     lay->addStretch();
-    setFixedWidth(48);
 
-    if (!hideMenu)
+    if (!mData->getHideMenu())
     {
-        connect(mBurgerButton, &QPushButton::toggled, this, &BurgerMenu::toggle);
-        connect(mActions, &QActionGroup::triggered, this, &BurgerMenu::triggered);
+        connect(mBurgerButton, SIGNAL(pressed()), this, SLOT(onBurgerButtonPressed()));
+        connect(mActions, SIGNAL(triggered(QAction *)), this, SLOT(onMenuTriggered(QAction *)));
     }
     else
     {
@@ -114,26 +66,26 @@ int BurgerMenu::menuWidth() const { return mMenuWidth; }
 
 QList< QAction * > BurgerMenu::actions() const { return mActions->actions(); }
 
-QAction *BurgerMenu::addMenuAction(QAction *action)
+QAction *BurgerMenu::addMenuAction(QAction *action, bool firstOnStartup)
 {
     mActions->addAction(action);
-    registerAction(action);
+    registerAction(action, firstOnStartup);
     return action;
 }
 
-QAction *BurgerMenu::addMenuAction(const QString &label)
+QAction *BurgerMenu::addMenuAction(const QString &label, bool firstOnStartup)
 {
     auto action = mActions->addAction(label);
     action->setCheckable(true);
-    registerAction(action);
+    registerAction(action, firstOnStartup);
     return action;
 }
 
-QAction *BurgerMenu::addMenuAction(const QIcon &icon, const QString &label)
+QAction *BurgerMenu::addMenuAction(const QIcon &icon, const QString &label, bool firstOnStartup)
 {
     auto action = mActions->addAction(icon, label);
     action->setCheckable(true);
-    registerAction(action);
+    registerAction(action, firstOnStartup);
     return action;
 }
 
@@ -176,20 +128,20 @@ void BurgerMenu::setMenuWidth(int width)
     if (mBurgerButton->isChecked())
         setFixedWidth(mBurgerButton->iconSize().width() + mMenuWidth);
     else
-        setFixedWidth(mBurgerButton->iconSize().width());
+        setFixedWidth(mBurgerButton->iconSize().width() + menuData->getOffset());
 
     emit menuWidthChanged(mMenuWidth);
 }
 
 void BurgerMenu::toggle(bool checked)
 {
-    toggled = checked;
-    if (mAnimated)
+    if (menuData->getHideMenu()) toggled = checked;
+    if (menuData->isAnimated())
     {
         auto anim = new QPropertyAnimation(this, "minimumWidth", this);
-        anim->setDuration(250);
+        anim->setDuration(menuData->getMenuOpenDuration());
         anim->setStartValue(mBurgerButton->iconSize().width());
-        anim->setEndValue(mBurgerButton->iconSize().width() + mMenuWidth);
+        anim->setEndValue(mBurgerButton->iconSize().width() + mMenuWidth + menuData->getExtendedMenuSize());
         anim->setDirection(checked ? QAbstractAnimation::Forward : QAbstractAnimation::Backward);
         anim->setEasingCurve(checked ? QEasingCurve::OutCubic : QEasingCurve::InCubic);
         anim->start(QAbstractAnimation::DeleteWhenStopped);
@@ -199,16 +151,26 @@ void BurgerMenu::toggle(bool checked)
         if (checked)
             setFixedWidth(mBurgerButton->iconSize().width() + mMenuWidth);
         else
-            setFixedWidth(mBurgerButton->iconSize().width());
+            setFixedWidth(mBurgerButton->iconSize().width() + menuData->getOffset());
     }
 }
 
-void BurgerMenu::registerAction(QAction *action)
+void BurgerMenu::registerAction(QAction *action, bool firstOnStartup)
 {
-    auto button = new BurgerButton(action, this);
+    auto button = new BurgerButton(action, menuData, this);
+    buttons.append(button);
     button->setIconSize(mBurgerButton->iconSize());
     auto lay = static_cast< QVBoxLayout * >(layout());
     lay->insertWidget(lay->count() - 1, button);
+
+    if (firstOnStartup)
+    {
+        button->setToggled(true);
+        lastTriggeredButton = button;
+        triggeredButton = button;
+    }
+
+    connect(button, SIGNAL(pressed()), this, SLOT(onButtonClicked()));
 }
 
 void BurgerMenu::unRegisterAction(QAction *action)
@@ -220,26 +182,36 @@ void BurgerMenu::unRegisterAction(QAction *action)
 
 void BurgerMenu::onMenuTriggered(QAction *action)
 {
-    if (toggled) toggle(false);
+    if (toggled && menuData->getHideMenu()) toggle(false);
     triggered(action);
 }
 
 void BurgerMenu::onBurgerButtonPressed()
 {
-    if (!toggled)
+    if (!toggled && menuData->getHideMenu())
         toggle(true);
     else
         toggle(false);
 }
 
-bool BurgerMenu::animated() const { return mAnimated; }
-
-void BurgerMenu::setAnimated(bool animated)
+void BurgerMenu::onButtonClicked()
 {
-    if (mAnimated == animated) return;
+    auto button = static_cast< BurgerButton * >(sender());
+    auto action = button->action();
+    if (action->isCheckable() && !action->isChecked())
+    {
+        action->toggle();
+    }
 
-    mAnimated = animated;
-    emit animatedChanged(mAnimated);
+    if (lastTriggeredButton)
+    {
+        lastTriggeredButton->setToggled(false);
+    }
+    triggeredButton = button;
+    lastTriggeredButton = triggeredButton;
+    triggeredButton->setToggled(true);
+
+    action->trigger();
 }
 
 void BurgerMenu::paintEvent(QPaintEvent *)

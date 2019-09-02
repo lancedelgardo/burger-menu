@@ -13,7 +13,17 @@ int main(int argc, char *argv[])
     QWidget window;
     window.setMinimumSize(500, 400);
 
-    BurgerMenu* menu     = new BurgerMenu();
+    BurgerMenuData *menuData = new BurgerMenuData();
+    menuData->setAnimated(true);                      // Animation of Menu
+    menuData->setHideMenu(true);                      // false = Show Menu as long as menuButton clicked again | true = hide menu by clicking button
+    menuData->setMenuOpenDuration(400);               // Speed of Opening Menu
+    menuData->setOffset(15);                          // Space between markToggled and Button
+    menuData->setMarkToggledButton(true);             // Show Toggle Mark
+    menuData->setToggledColor(QColor(51, 204, 255));  // Color of Toggle Mark
+    menuData->setToggleSize(3);                       // Size of Toggle Mark
+    menuData->setExtendedMenuSize(100);               // Toggled Menu Size
+    BurgerMenu *menu = new BurgerMenu(menuData);
+
     QTextEdit*  textEdit = new QTextEdit();
 
     window.setLayout(new QHBoxLayout());
